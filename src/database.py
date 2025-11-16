@@ -121,6 +121,40 @@ class NewsletterDatabase:
             ON emails(is_analyzed)
         """)
 
+        # Email analysis table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS email_analysis (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email_id INTEGER UNIQUE NOT NULL,
+                primary_purpose TEXT,
+                value_propositions TEXT,
+                calls_to_action TEXT,
+                personalization_elements TEXT,
+                tone TEXT,
+                frequency_expectations TEXT,
+                notable_elements TEXT,
+                effectiveness_score INTEGER,
+                effectiveness_reasoning TEXT,
+                key_takeaways TEXT,
+                model_used TEXT,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                analysis_raw_json TEXT,
+                analyzed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (email_id) REFERENCES emails (id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_analysis_email
+            ON email_analysis(email_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_analysis_score
+            ON email_analysis(effectiveness_score)
+        """)
+
         self.conn.commit()
         print("Database tables created/verified")
 
@@ -532,6 +566,227 @@ class NewsletterDatabase:
             'sequenced_emails': sequenced_emails,
             'first_email_date': date_range[0],
             'last_email_date': date_range[1],
+        }
+
+    def save_email_analysis(
+        self,
+        email_id: int,
+        analysis: Dict[str, Any]
+    ) -> int:
+        """
+        Save email analysis results to database.
+
+        Args:
+            email_id: ID of the email in emails table
+            analysis: Analysis dictionary from EmailAnalyzer
+
+        Returns:
+            Analysis ID
+        """
+        cursor = self.conn.cursor()
+
+        # Extract metadata
+        metadata = analysis.get('_metadata', {})
+
+        # Extract effectiveness score and reasoning
+        effectiveness = analysis.get('effectiveness_score', {})
+        if isinstance(effectiveness, dict):
+            effectiveness_score = effectiveness.get('score')
+            effectiveness_reasoning = effectiveness.get('reasoning')
+        else:
+            # Handle case where effectiveness_score is just a number
+            effectiveness_score = effectiveness
+            effectiveness_reasoning = None
+
+        # Check if analysis already exists
+        cursor.execute("SELECT id FROM email_analysis WHERE email_id = ?", (email_id,))
+        existing = cursor.fetchone()
+
+        if existing:
+            # Update existing analysis
+            cursor.execute("""
+                UPDATE email_analysis
+                SET primary_purpose = ?,
+                    value_propositions = ?,
+                    calls_to_action = ?,
+                    personalization_elements = ?,
+                    tone = ?,
+                    frequency_expectations = ?,
+                    notable_elements = ?,
+                    effectiveness_score = ?,
+                    effectiveness_reasoning = ?,
+                    key_takeaways = ?,
+                    model_used = ?,
+                    input_tokens = ?,
+                    output_tokens = ?,
+                    analysis_raw_json = ?,
+                    analyzed_at = CURRENT_TIMESTAMP
+                WHERE email_id = ?
+            """, (
+                analysis.get('primary_purpose'),
+                json.dumps(analysis.get('value_propositions', [])),
+                json.dumps(analysis.get('calls_to_action', [])),
+                json.dumps(analysis.get('personalization_elements', [])),
+                analysis.get('tone'),
+                analysis.get('frequency_expectations'),
+                json.dumps(analysis.get('notable_elements', [])),
+                effectiveness_score,
+                effectiveness_reasoning,
+                json.dumps(analysis.get('key_takeaways', [])),
+                metadata.get('model'),
+                metadata.get('input_tokens'),
+                metadata.get('output_tokens'),
+                json.dumps(analysis),
+                email_id
+            ))
+            analysis_id = existing[0]
+        else:
+            # Insert new analysis
+            cursor.execute("""
+                INSERT INTO email_analysis (
+                    email_id, primary_purpose, value_propositions, calls_to_action,
+                    personalization_elements, tone, frequency_expectations,
+                    notable_elements, effectiveness_score, effectiveness_reasoning,
+                    key_takeaways, model_used, input_tokens, output_tokens,
+                    analysis_raw_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                email_id,
+                analysis.get('primary_purpose'),
+                json.dumps(analysis.get('value_propositions', [])),
+                json.dumps(analysis.get('calls_to_action', [])),
+                json.dumps(analysis.get('personalization_elements', [])),
+                analysis.get('tone'),
+                analysis.get('frequency_expectations'),
+                json.dumps(analysis.get('notable_elements', [])),
+                effectiveness_score,
+                effectiveness_reasoning,
+                json.dumps(analysis.get('key_takeaways', [])),
+                metadata.get('model'),
+                metadata.get('input_tokens'),
+                metadata.get('output_tokens'),
+                json.dumps(analysis)
+            ))
+            analysis_id = cursor.lastrowid
+
+        # Mark email as analyzed
+        cursor.execute("""
+            UPDATE emails
+            SET is_analyzed = 1
+            WHERE id = ?
+        """, (email_id,))
+
+        self.conn.commit()
+        return analysis_id
+
+    def get_email_analysis(self, email_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get analysis for a specific email.
+
+        Args:
+            email_id: Email ID
+
+        Returns:
+            Analysis dictionary or None
+        """
+        cursor = self.conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM email_analysis
+            WHERE email_id = ?
+        """, (email_id,))
+
+        row = cursor.fetchone()
+
+        if not row:
+            return None
+
+        analysis = dict(row)
+
+        # Parse JSON fields
+        json_fields = ['value_propositions', 'calls_to_action', 'personalization_elements',
+                      'notable_elements', 'key_takeaways']
+        for field in json_fields:
+            if analysis.get(field):
+                try:
+                    analysis[field] = json.loads(analysis[field])
+                except json.JSONDecodeError:
+                    pass
+
+        return analysis
+
+    def get_analyzed_emails(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get all analyzed emails with their analysis.
+
+        Args:
+            limit: Maximum number to return
+
+        Returns:
+            List of email + analysis dictionaries
+        """
+        cursor = self.conn.cursor()
+
+        query = """
+            SELECT e.*, a.*
+            FROM emails e
+            INNER JOIN email_analysis a ON e.id = a.email_id
+            ORDER BY e.send_timestamp DESC
+        """
+
+        if limit:
+            query += f" LIMIT {limit}"
+
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        return [dict(row) for row in rows]
+
+    def get_analysis_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about email analyses.
+
+        Returns:
+            Dictionary with analysis stats
+        """
+        cursor = self.conn.cursor()
+
+        # Total analyzed
+        cursor.execute("SELECT COUNT(*) FROM email_analysis")
+        total_analyzed = cursor.fetchone()[0]
+
+        # Average effectiveness score
+        cursor.execute("SELECT AVG(effectiveness_score) FROM email_analysis WHERE effectiveness_score IS NOT NULL")
+        avg_score = cursor.fetchone()[0]
+
+        # Score distribution
+        cursor.execute("""
+            SELECT effectiveness_score, COUNT(*) as count
+            FROM email_analysis
+            WHERE effectiveness_score IS NOT NULL
+            GROUP BY effectiveness_score
+            ORDER BY effectiveness_score DESC
+        """)
+        score_dist = [dict(row) for row in cursor.fetchall()]
+
+        # Token usage
+        cursor.execute("""
+            SELECT
+                SUM(input_tokens) as total_input,
+                SUM(output_tokens) as total_output,
+                AVG(input_tokens) as avg_input,
+                AVG(output_tokens) as avg_output
+            FROM email_analysis
+            WHERE input_tokens IS NOT NULL
+        """)
+        token_stats = dict(cursor.fetchone())
+
+        return {
+            'total_analyzed': total_analyzed,
+            'average_effectiveness_score': round(avg_score, 2) if avg_score else None,
+            'score_distribution': score_dist,
+            'token_usage': token_stats
         }
 
     def close(self):

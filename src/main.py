@@ -17,6 +17,8 @@ from .gmail_client import GmailClient
 from .email_processor import EmailProcessor, analyze_email_sequence
 from .database import NewsletterDatabase
 from .publisher_manager import PublisherManager, print_publisher_table
+from .llm_analyzer import EmailAnalyzer
+from .batch_analyzer import BatchEmailAnalyzer
 
 
 @click.group()
@@ -571,6 +573,126 @@ def search_emails(
         click.echo()
 
     db.close()
+
+
+@cli.command('analyze-emails')
+@click.option(
+    '--db-path',
+    default='data/newsletter_emails.db',
+    help='Path to SQLite database'
+)
+@click.option(
+    '--batch-size',
+    type=int,
+    default=None,
+    help='Maximum number of emails to analyze (default: all unanalyzed)'
+)
+@click.option(
+    '--delay',
+    type=float,
+    default=1.0,
+    help='Delay between API requests in seconds (default: 1.0)'
+)
+@click.option(
+    '--publisher',
+    help='Only analyze emails from specific publisher'
+)
+@click.option(
+    '--sequence',
+    type=int,
+    help='Only analyze emails with specific sequence number'
+)
+@click.option(
+    '--reanalyze',
+    is_flag=True,
+    help='Re-analyze already analyzed emails'
+)
+def analyze_emails_cmd(
+    db_path: str,
+    batch_size: Optional[int],
+    delay: float,
+    publisher: Optional[str],
+    sequence: Optional[int],
+    reanalyze: bool
+):
+    """
+    Analyze emails using Claude AI.
+
+    Uses Anthropic's Claude API to extract structured insights from newsletter
+    onboarding emails. Analyzes purpose, value propositions, CTAs, tone, and
+    effectiveness.
+
+    Examples:
+
+        # Analyze first 10 unanalyzed emails
+        python -m src.main analyze-emails --batch-size 10
+
+        # Analyze with custom delay (for rate limiting)
+        python -m src.main analyze-emails --batch-size 5 --delay 2.0
+
+        # Analyze only first emails in sequences
+        python -m src.main analyze-emails --sequence 1 --batch-size 20
+
+        # Analyze specific publisher
+        python -m src.main analyze-emails --publisher "Tech Weekly" --batch-size 10
+    """
+    click.echo("=" * 70)
+    click.echo("Newsletter Email Analysis with Claude AI")
+    click.echo("=" * 70)
+    click.echo()
+
+    # Initialize components
+    try:
+        db = NewsletterDatabase(db_path)
+        analyzer = EmailAnalyzer()
+        batch_analyzer = BatchEmailAnalyzer(db, analyzer, delay_seconds=delay)
+    except ValueError as e:
+        click.echo(f"✗ Error: {e}", err=True)
+        click.echo("\nPlease set ANTHROPIC_API_KEY in your .env file", err=True)
+        click.echo("Get your API key from: https://console.anthropic.com/", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"✗ Error initializing: {e}", err=True)
+        sys.exit(1)
+
+    # Run batch analysis
+    try:
+        summary = batch_analyzer.analyze_batch(
+            batch_size=batch_size,
+            skip_analyzed=not reanalyze,
+            publisher_filter=publisher,
+            sequence_filter=sequence
+        )
+
+        # Print summary
+        batch_analyzer.print_summary(summary)
+
+        # Show sample results if any were processed
+        if summary['success'] > 0:
+            click.echo("Sample Analysis Results:")
+            click.echo("-" * 70)
+
+            analyzed = db.get_analyzed_emails(limit=3)
+            for i, email in enumerate(analyzed[:3], 1):
+                click.echo(f"\n{i}. {email.get('subject', 'N/A')}")
+                click.echo(f"   Publisher: {email.get('publisher_name', 'N/A')}")
+                click.echo(f"   Tone: {email.get('tone', 'N/A')}")
+                click.echo(f"   Effectiveness Score: {email.get('effectiveness_score', 'N/A')}/10")
+
+            click.echo("\n" + "-" * 70)
+            click.echo("\nView full analysis results:")
+            click.echo(f"  Database: {db_path}")
+            click.echo(f"  Table: email_analysis")
+
+    except Exception as e:
+        click.echo(f"\n✗ Error during analysis: {e}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    finally:
+        db.close()
+
+    click.echo("\n✓ Analysis complete!")
 
 
 def main():

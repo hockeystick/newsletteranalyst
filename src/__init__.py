@@ -8,6 +8,15 @@ from .gmail_client import GmailClient
 from .email_processor import EmailProcessor
 from .database import NewsletterDatabase
 from .publisher_manager import PublisherManager
+from .llm_analyzer import EmailAnalyzer
+from .batch_analyzer import BatchEmailAnalyzer
 
 __version__ = '0.1.0'
-__all__ = ['GmailClient', 'EmailProcessor', 'NewsletterDatabase', 'PublisherManager']
+__all__ = [
+    'GmailClient',
+    'EmailProcessor',
+    'NewsletterDatabase',
+    'PublisherManager',
+    'EmailAnalyzer',
+    'BatchEmailAnalyzer'
+]
