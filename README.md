@@ -11,8 +11,12 @@ Newsletter Analyst helps you understand and analyze onboarding email sequences f
 - **Gmail API Integration**: Secure OAuth2 authentication with automatic token refresh
 - **Email Retrieval**: Fetch emails by labels, search queries, or specific criteria
 - **Content Extraction**: Extract both plain text and HTML versions of emails
+- **Email Processing**: Metadata extraction, HTML-to-text conversion with structure preservation
+- **Deduplication**: Smart hash-based duplicate detection
+- **Sequence Detection**: Automatically identify onboarding email sequences (1st, 2nd, 3rd email, etc.)
+- **SQLite Database**: Local storage for emails and publisher information
+- **CLI Interface**: Easy-to-use command-line tools for fetching and analyzing emails
 - **Rate Limit Handling**: Automatic retry logic with exponential backoff
-- **Easy Testing**: Built-in test function to verify your connection
 
 ## Quick Start
 
@@ -37,49 +41,119 @@ python src/gmail_client.py
 
 This will authenticate with Gmail and display your 5 most recent emails.
 
+### 4. Run Basic Tests
+
+```bash
+python test_basic.py
+```
+
+This will test the email processor, database, and optionally Gmail integration.
+
+### 5. Fetch and Process Emails
+
+```bash
+# Fetch emails from a specific label
+python -m src.main fetch-emails --label "Newsletter-Onboarding" --max-results 20
+
+# Fetch emails since a specific date
+python -m src.main fetch-emails --since "2025-01-01" --max-results 50
+
+# Fetch from specific sender
+python -m src.main fetch-emails --query "from:newsletter@example.com" --max-results 30
+```
+
 ## Project Structure
 
 ```
 newsletteranalyst/
-├── src/                    # Source code
+├── src/                      # Source code
 │   ├── __init__.py
-│   └── gmail_client.py    # Gmail API client
-├── config/                # Configuration files
-│   ├── credentials.json   # OAuth credentials (not in repo)
-│   └── token.json         # Access token (not in repo)
-├── data/                  # Data storage
-├── output/                # Analysis outputs
-├── .env                   # Environment variables (not in repo)
-├── .env.example           # Environment template
-├── requirements.txt       # Python dependencies
-├── SETUP.md              # Detailed setup guide
-└── README.md             # This file
+│   ├── gmail_client.py       # Gmail API client
+│   ├── email_processor.py    # Email processing & analysis
+│   ├── database.py           # SQLite database operations
+│   └── main.py              # CLI interface
+├── config/                  # Configuration files
+│   ├── credentials.json     # OAuth credentials (not in repo)
+│   └── token.json           # Access token (not in repo)
+├── data/                    # Data storage
+│   └── newsletter_emails.db # SQLite database (created automatically)
+├── output/                  # Analysis outputs
+├── .env                     # Environment variables (not in repo)
+├── .env.example             # Environment template
+├── requirements.txt         # Python dependencies
+├── test_basic.py            # Basic test script
+├── SETUP.md                # Detailed setup guide
+└── README.md               # This file
 ```
 
-## Usage Example
+## Usage
+
+### CLI Commands
+
+**Fetch and process emails:**
+```bash
+# Fetch from specific label since a date
+python -m src.main fetch-emails --label "Newsletter-Onboarding" --since "2025-01-01"
+
+# Fetch with custom query
+python -m src.main fetch-emails --query "from:newsletter@example.com subject:welcome"
+
+# Fetch limited number
+python -m src.main fetch-emails --label "INBOX" --max-results 50
+```
+
+**View statistics:**
+```bash
+# Show database statistics
+python -m src.main stats
+
+# List all publishers
+python -m src.main list-publishers
+
+# Search emails
+python -m src.main search --keyword "welcome" --limit 10
+python -m src.main search --publisher "Example Newsletter" --sequence 1
+```
+
+### Python API Example
 
 ```python
-from src.gmail_client import GmailClient
+from src import GmailClient, EmailProcessor, NewsletterDatabase
 
-# Initialize the client
-client = GmailClient()
+# Initialize components
+gmail = GmailClient()
+processor = EmailProcessor()
+db = NewsletterDatabase()
 
-# Search for newsletter emails
-emails = client.list_emails(
-    query='from:newsletter@example.com',
-    max_results=50
-)
+# Fetch emails
+messages = gmail.list_emails(query='from:newsletter@example.com', max_results=50)
 
-# Analyze each email
-for msg in emails:
-    email = client.get_email(msg['id'])
-    headers = client.get_email_headers(email)
-    body = client.extract_email_body(email)
+# Process each email
+for msg in messages:
+    email = gmail.get_email(msg['id'])
+    body = gmail.extract_email_body(email)
 
-    print(f"Subject: {headers['subject']}")
-    print(f"From: {headers['from']}")
-    print(f"Plain text length: {len(body['plain'])}")
-    print(f"Has HTML: {bool(body['html'])}")
+    # Process and analyze
+    processed = processor.process_email(email, body['plain'], body['html'])
+
+    # Save to database
+    db.save_email(
+        message_id=processed['message_id'],
+        publisher_name=processed['publisher_name'],
+        sender=processed['sender'],
+        subject=processed['subject'],
+        send_timestamp=processed['timestamp'],
+        body_text=processed['body_text'],
+        body_html=processed['body_html'],
+        raw_json=processed['raw_json']
+    )
+
+# Get analytics
+stats = db.get_publisher_stats()
+for stat in stats:
+    print(f"{stat['publisher_name']}: {stat['email_count']} emails")
+
+db.close()
 ```
 
 ## Security
