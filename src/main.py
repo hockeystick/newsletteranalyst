@@ -16,6 +16,7 @@ from tqdm import tqdm
 from .gmail_client import GmailClient
 from .email_processor import EmailProcessor, analyze_email_sequence
 from .database import NewsletterDatabase
+from .publisher_manager import PublisherManager, print_publisher_table
 
 
 @click.group()
@@ -352,27 +353,179 @@ def show_stats(db_path: str):
     default='data/newsletter_emails.db',
     help='Path to SQLite database'
 )
-def list_publishers(db_path: str):
-    """List all publishers in database."""
+@click.option(
+    '--limit',
+    type=int,
+    default=None,
+    help='Maximum number of publishers to display'
+)
+def list_publishers_cmd(db_path: str, limit: Optional[int]):
+    """List all publishers in database with detailed information."""
     try:
         db = NewsletterDatabase(db_path)
+        manager = PublisherManager(db)
     except Exception as e:
         click.echo(f"Error opening database: {e}", err=True)
         sys.exit(1)
 
-    pub_stats = db.get_publisher_stats()
+    publishers = manager.list_publishers()
+    print_publisher_table(publishers, limit=limit)
 
-    click.echo(f"\nFound {len(pub_stats)} publishers:\n")
+    db.close()
 
-    for i, stat in enumerate(pub_stats, 1):
-        click.echo(
-            f"{i:3}. {stat['publisher_name']:40} "
-            f"| {stat['email_count']:3} emails "
-            f"| First: {stat['first_email'][:10] if stat['first_email'] else 'N/A'} "
-            f"| Last: {stat['last_email'][:10] if stat['last_email'] else 'N/A'}"
-        )
 
-    click.echo()
+@cli.command('add-publisher')
+@click.option(
+    '--db-path',
+    default='data/newsletter_emails.db',
+    help='Path to SQLite database'
+)
+@click.option('--name', help='Publisher name (skip interactive mode)')
+@click.option('--domain', help='Email domain')
+@click.option('--country', help='Country code (e.g., US, UK, CA)')
+@click.option('--language', help='Language code (e.g., en, es, fr)')
+@click.option('--website', help='Website URL')
+@click.option('--business-model', help='Business model (free, freemium, paid, sponsored)')
+@click.option('--signup-date', help='Signup date (YYYY-MM-DD)')
+@click.option('--notes', help='Additional notes')
+def add_publisher_cmd(
+    db_path: str,
+    name: Optional[str],
+    domain: Optional[str],
+    country: Optional[str],
+    language: Optional[str],
+    website: Optional[str],
+    business_model: Optional[str],
+    signup_date: Optional[str],
+    notes: Optional[str]
+):
+    """
+    Add a new publisher to the database.
+
+    If no options provided, runs in interactive mode with prompts.
+
+    Examples:
+
+        # Interactive mode
+        python -m src.main add-publisher
+
+        # Command-line mode
+        python -m src.main add-publisher --name "Tech Weekly" --country US --language en
+    """
+    try:
+        db = NewsletterDatabase(db_path)
+        manager = PublisherManager(db)
+    except Exception as e:
+        click.echo(f"Error opening database: {e}", err=True)
+        sys.exit(1)
+
+    if name:
+        # Non-interactive mode with command-line options
+        try:
+            publisher_id = manager.add_publisher(
+                name=name,
+                domain=domain,
+                country=country,
+                language=language,
+                website=website,
+                business_model=business_model,
+                signup_date=signup_date,
+                notes=notes
+            )
+            click.echo(f"✓ Publisher '{name}' added successfully (ID: {publisher_id})")
+        except Exception as e:
+            click.echo(f"✗ Error adding publisher: {e}", err=True)
+            sys.exit(1)
+    else:
+        # Interactive mode
+        manager.add_publisher_interactive()
+
+    db.close()
+
+
+@cli.command('export-publishers')
+@click.option(
+    '--db-path',
+    default='data/newsletter_emails.db',
+    help='Path to SQLite database'
+)
+@click.option(
+    '--output',
+    default='output/publishers.csv',
+    help='Output CSV file path'
+)
+@click.option(
+    '--template/--no-template',
+    default=True,
+    help='Include signup tracking template fields'
+)
+def export_publishers_cmd(db_path: str, output: str, template: bool):
+    """
+    Export publishers to CSV file.
+
+    Examples:
+
+        # Export with tracking template fields (default)
+        python -m src.main export-publishers --output publishers.csv
+
+        # Export basic data only
+        python -m src.main export-publishers --output publishers.csv --no-template
+    """
+    try:
+        db = NewsletterDatabase(db_path)
+        manager = PublisherManager(db)
+    except Exception as e:
+        click.echo(f"Error opening database: {e}", err=True)
+        sys.exit(1)
+
+    click.echo("Exporting publishers...")
+    success = manager.export_publishers_csv(output, include_template_fields=template)
+
+    if success:
+        click.echo(f"\n✓ Publishers exported to {output}")
+        click.echo("  You can open this file in Google Sheets or Excel")
+    else:
+        click.echo("\n✗ Export failed", err=True)
+        sys.exit(1)
+
+    db.close()
+
+
+@cli.command('create-signup-template')
+@click.option(
+    '--output',
+    default='output/signup_tracking_template.csv',
+    help='Output CSV file path'
+)
+def create_signup_template_cmd(output: str):
+    """
+    Create an empty signup tracking template.
+
+    This creates a Google Sheets-compatible CSV template for tracking
+    newsletter signups during the collection phase.
+
+    Examples:
+
+        python -m src.main create-signup-template
+        python -m src.main create-signup-template --output my_signups.csv
+    """
+    try:
+        db = NewsletterDatabase()
+        manager = PublisherManager(db)
+    except Exception as e:
+        click.echo(f"Error initializing: {e}", err=True)
+        sys.exit(1)
+
+    click.echo("Creating signup tracking template...")
+    success = manager.generate_signup_template(output)
+
+    if success:
+        click.echo(f"\n✓ Template created successfully!")
+        click.echo(f"  Open {output} in Google Sheets or Excel to start tracking signups")
+    else:
+        click.echo("\n✗ Template creation failed", err=True)
+        sys.exit(1)
+
     db.close()
 
 

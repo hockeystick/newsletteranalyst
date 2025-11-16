@@ -14,6 +14,8 @@ Newsletter Analyst helps you understand and analyze onboarding email sequences f
 - **Email Processing**: Metadata extraction, HTML-to-text conversion with structure preservation
 - **Deduplication**: Smart hash-based duplicate detection
 - **Sequence Detection**: Automatically identify onboarding email sequences (1st, 2nd, 3rd email, etc.)
+- **Publisher Tracking**: Manage newsletter publishers with metadata (country, language, business model)
+- **Signup Tracking**: Google Sheets-compatible CSV templates for tracking signups
 - **SQLite Database**: Local storage for emails and publisher information
 - **CLI Interface**: Easy-to-use command-line tools for fetching and analyzing emails
 - **Rate Limit Handling**: Automatic retry logic with exponential backoff
@@ -71,18 +73,21 @@ newsletteranalyst/
 │   ├── gmail_client.py       # Gmail API client
 │   ├── email_processor.py    # Email processing & analysis
 │   ├── database.py           # SQLite database operations
+│   ├── publisher_manager.py  # Publisher tracking & management
 │   └── main.py              # CLI interface
 ├── config/                  # Configuration files
 │   ├── credentials.json     # OAuth credentials (not in repo)
 │   └── token.json           # Access token (not in repo)
 ├── data/                    # Data storage
 │   └── newsletter_emails.db # SQLite database (created automatically)
-├── output/                  # Analysis outputs
+├── output/                  # Analysis outputs & CSV exports
 ├── .env                     # Environment variables (not in repo)
 ├── .env.example             # Environment template
 ├── requirements.txt         # Python dependencies
 ├── test_basic.py            # Basic test script
 ├── SETUP.md                # Detailed setup guide
+├── USAGE.md                # Usage examples
+├── PUBLISHER_TRACKING.md   # Publisher tracking guide
 └── README.md               # This file
 ```
 
@@ -113,6 +118,21 @@ python -m src.main list-publishers
 # Search emails
 python -m src.main search --keyword "welcome" --limit 10
 python -m src.main search --publisher "Example Newsletter" --sequence 1
+```
+
+**Manage publishers:**
+```bash
+# Add publisher (interactive mode)
+python -m src.main add-publisher
+
+# Add publisher (command-line mode)
+python -m src.main add-publisher --name "Tech Weekly" --country US --language en
+
+# Export publishers to CSV
+python -m src.main export-publishers --output publishers.csv
+
+# Create signup tracking template
+python -m src.main create-signup-template
 ```
 
 ### Python API Example
@@ -174,13 +194,17 @@ Sensitive files are protected by `.gitignore`:
 ## Next Steps
 
 After setting up the Gmail connection:
-1. Build email analysis features
-2. Create visualization tools
-3. Generate insights from newsletter sequences
+1. Create a signup tracking template to organize your newsletter collection
+2. Add publishers to track metadata (country, language, business model)
+3. Fetch emails and let the system detect onboarding sequences
+4. Export data for analysis in Google Sheets or Excel
+5. Build custom analysis and visualization tools
 
 ## Documentation
 
-- [Setup Guide](SETUP.md) - Detailed setup instructions
+- [Setup Guide](SETUP.md) - Gmail API setup and authentication
+- [Usage Guide](USAGE.md) - CLI commands and workflows
+- [Publisher Tracking](PUBLISHER_TRACKING.md) - Managing publishers and tracking signups
 - [Gmail API Docs](https://developers.google.com/gmail/api) - Official Gmail API documentation
 
 ## License
