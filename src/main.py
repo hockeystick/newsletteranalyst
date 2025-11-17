@@ -19,6 +19,8 @@ from .database import NewsletterDatabase
 from .publisher_manager import PublisherManager, print_publisher_table
 from .llm_analyzer import EmailAnalyzer
 from .batch_analyzer import BatchEmailAnalyzer
+from .reporter import EmailReporter
+from .pattern_detector import PatternDetector
 
 
 @click.group()
@@ -693,6 +695,275 @@ def analyze_emails_cmd(
         db.close()
 
     click.echo("\n✓ Analysis complete!")
+
+
+@cli.command('export-analysis')
+@click.option(
+    '--db-path',
+    default='data/newsletter_emails.db',
+    help='Path to SQLite database'
+)
+@click.option(
+    '--output',
+    default='output/analysis_results.csv',
+    help='Output CSV file path'
+)
+def export_analysis_cmd(db_path: str, output: str):
+    """
+    Export all analyzed emails to CSV with analysis results.
+
+    Creates a comprehensive CSV file with all email data and AI analysis results
+    including effectiveness scores, CTAs, value propositions, and more.
+
+    Examples:
+
+        python -m src.main export-analysis
+        python -m src.main export-analysis --output my_results.csv
+    """
+    click.echo("Exporting analyzed emails to CSV...")
+
+    try:
+        db = NewsletterDatabase(db_path)
+        reporter = EmailReporter(db)
+
+        success = reporter.export_analysis_to_csv(output)
+
+        if success:
+            click.echo(f"\n✓ Export complete!")
+            click.echo(f"  File: {output}")
+            click.echo("\nThis CSV can be opened in:")
+            click.echo("  - Google Sheets")
+            click.echo("  - Microsoft Excel")
+            click.echo("  - Python/Pandas for further analysis")
+        else:
+            click.echo("\n✗ Export failed", err=True)
+            sys.exit(1)
+
+        db.close()
+
+    except Exception as e:
+        click.echo(f"✗ Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command('generate-report')
+@click.option(
+    '--db-path',
+    default='data/newsletter_emails.db',
+    help='Path to SQLite database'
+)
+@click.option(
+    '--output',
+    default='output/analysis_report.txt',
+    help='Output text file path'
+)
+def generate_report_cmd(db_path: str, output: str):
+    """
+    Generate a comprehensive analysis report.
+
+    Creates a text report with statistics, patterns, and insights from
+    analyzed newsletter emails. Includes breakdowns by country, business model,
+    and common patterns.
+
+    Examples:
+
+        python -m src.main generate-report
+        python -m src.main generate-report --output my_report.txt
+    """
+    click.echo("Generating analysis report...")
+
+    try:
+        db = NewsletterDatabase(db_path)
+        reporter = EmailReporter(db)
+
+        success = reporter.generate_text_report(output)
+
+        if success:
+            click.echo(f"\n✓ Report generated!")
+            click.echo(f"  File: {output}")
+            click.echo("\nReport includes:")
+            click.echo("  - Database statistics")
+            click.echo("  - Effectiveness scores")
+            click.echo("  - Country analysis")
+            click.echo("  - Business model analysis")
+            click.echo("  - Common patterns")
+        else:
+            click.echo("\n✗ Report generation failed", err=True)
+            sys.exit(1)
+
+        db.close()
+
+    except Exception as e:
+        click.echo(f"✗ Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command('export-by-country')
+@click.option(
+    '--db-path',
+    default='data/newsletter_emails.db',
+    help='Path to SQLite database'
+)
+@click.option(
+    '--country',
+    required=True,
+    help='Country code to filter by (e.g., "US", "UK", "CZ")'
+)
+@click.option(
+    '--output',
+    default=None,
+    help='Output CSV file path (default: output/{country}_analysis.csv)'
+)
+def export_by_country_cmd(db_path: str, country: str, output: Optional[str]):
+    """
+    Export analyzed emails for a specific country.
+
+    Filters emails by country and exports analysis results to CSV.
+    Useful for comparing onboarding approaches by region.
+
+    Examples:
+
+        python -m src.main export-by-country --country "US"
+        python -m src.main export-by-country --country "CZ" --output czech_newsletters.csv
+    """
+    # Default output path
+    if not output:
+        output = f"output/{country}_analysis.csv"
+
+    click.echo(f"Exporting emails for country: {country}...")
+
+    try:
+        db = NewsletterDatabase(db_path)
+        reporter = EmailReporter(db)
+
+        success = reporter.export_by_country(country, output)
+
+        if success:
+            click.echo(f"\n✓ Export complete!")
+            click.echo(f"  File: {output}")
+        else:
+            click.echo(f"\n⚠ No analyzed emails found for country: {country}", err=True)
+
+        db.close()
+
+    except Exception as e:
+        click.echo(f"✗ Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command('find-patterns')
+@click.option(
+    '--db-path',
+    default='data/newsletter_emails.db',
+    help='Path to SQLite database'
+)
+@click.option(
+    '--show-phrases/--no-phrases',
+    default=True,
+    help='Show common phrases'
+)
+@click.option(
+    '--show-ctas/--no-ctas',
+    default=True,
+    help='Show grouped CTAs'
+)
+@click.option(
+    '--show-outliers/--no-outliers',
+    default=True,
+    help='Show outlier emails'
+)
+def find_patterns_cmd(
+    db_path: str,
+    show_phrases: bool,
+    show_ctas: bool,
+    show_outliers: bool
+):
+    """
+    Detect patterns and outliers in analyzed emails.
+
+    Analyzes common phrases, groups similar CTAs, and identifies
+    unusual or standout emails.
+
+    Examples:
+
+        python -m src.main find-patterns
+        python -m src.main find-patterns --no-phrases
+        python -m src.main find-patterns --show-ctas --no-outliers
+    """
+    click.echo("=" * 70)
+    click.echo("Pattern Detection")
+    click.echo("=" * 70)
+    click.echo()
+
+    try:
+        db = NewsletterDatabase(db_path)
+        detector = PatternDetector(db)
+
+        # Common phrases
+        if show_phrases:
+            click.echo("Finding common phrases...")
+            phrases = detector.find_common_phrases(top_n=10)
+
+            click.echo("\nMost Common 2-Word Phrases:")
+            for phrase, count in phrases.get('2_word_phrases', [])[:15]:
+                click.echo(f"  {count:3}x  {phrase}")
+
+            click.echo("\nMost Common 3-Word Phrases:")
+            for phrase, count in phrases.get('3_word_phrases', [])[:10]:
+                click.echo(f"  {count:3}x  {phrase}")
+
+            click.echo("\nMost Common Welcome Phrases:")
+            for phrase, count in phrases.get('welcome_phrases', [])[:10]:
+                click.echo(f"  {count:2}x  {phrase[:70]}...")
+
+            click.echo()
+
+        # Grouped CTAs
+        if show_ctas:
+            click.echo("Grouping similar CTAs...")
+            cta_groups = detector.group_similar_ctas()
+
+            click.echo("\nCTA Categories:")
+            for group, data in sorted(cta_groups.items(), key=lambda x: x[1]['count'], reverse=True)[:10]:
+                click.echo(f"\n{group.upper().replace('_', ' ')} ({data['count']} total, {data['unique']} unique):")
+                for cta, count in data['most_common'][:5]:
+                    click.echo(f"  {count:2}x  {cta[:60]}")
+
+            click.echo()
+
+        # Outliers
+        if show_outliers:
+            click.echo("Identifying outliers...")
+            outliers = detector.identify_outliers()
+
+            if outliers.get('very_high_score'):
+                click.echo("\nHigh-Performing Emails (Score ≥9):")
+                for email in outliers['very_high_score'][:5]:
+                    click.echo(f"  {email['score']}/10 - {email['publisher']}: {email['subject'][:50]}")
+
+            if outliers.get('very_low_score'):
+                click.echo("\nLow-Performing Emails (Score ≤4):")
+                for email in outliers['very_low_score'][:5]:
+                    click.echo(f"  {email['score']}/10 - {email['publisher']}: {email['subject'][:50]}")
+
+            if outliers.get('unusually_long'):
+                click.echo("\nUnusually Long Emails:")
+                for email in outliers['unusually_long'][:5]:
+                    click.echo(f"  {email['length']:,} chars ({email['avg_length']:,} avg) - {email['publisher']}")
+
+            if outliers.get('many_ctas'):
+                click.echo("\nEmails with Many CTAs:")
+                for email in outliers['many_ctas'][:5]:
+                    click.echo(f"  {email['cta_count']} CTAs ({email['avg_ctas']:.1f} avg) - {email['publisher']}")
+
+        click.echo("\n" + "=" * 70)
+        db.close()
+
+    except Exception as e:
+        click.echo(f"✗ Error: {e}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 def main():
