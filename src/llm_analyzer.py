@@ -119,6 +119,9 @@ Respond ONLY with valid JSON. Do not include any text before or after the JSON o
         # Build prompt
         prompt = self._build_analysis_prompt(subject, body_text, sender)
 
+        # Initialize response_text before try block to avoid NameError in exception handler
+        response_text = None
+
         try:
             # Call Claude API
             response = self.client.messages.create(
@@ -171,7 +174,8 @@ Respond ONLY with valid JSON. Do not include any text before or after the JSON o
             raise
         except json.JSONDecodeError as e:
             print(f"JSON parse error: {e}")
-            print(f"Response text: {response_text[:500]}")
+            if response_text:
+                print(f"Response text: {response_text[:500]}")
             raise
         except Exception as e:
             print(f"Error analyzing email: {e}")

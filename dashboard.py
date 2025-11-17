@@ -64,77 +64,98 @@ def load_data():
 
     db = NewsletterDatabase(db_path)
 
-    # Get analyzed emails
-    cursor = db.conn.cursor()
-    cursor.execute("""
-        SELECT
-            e.id, e.publisher_name, e.country, e.sender, e.subject,
-            e.send_date, e.email_sequence_number, e.sequence_confidence,
-            e.body_text,
-            a.primary_purpose, a.tone, a.effectiveness_score,
-            a.effectiveness_reasoning, a.value_propositions,
-            a.calls_to_action, a.personalization_elements,
-            a.notable_elements, a.key_takeaways,
-            a.frequency_expectations, a.analyzed_at
-        FROM emails e
-        INNER JOIN email_analysis a ON e.id = a.email_id
-        ORDER BY e.send_date DESC
-    """)
+    try:
+        # Get analyzed emails
+        cursor = db.conn.cursor()
+        cursor.execute("""
+            SELECT
+                e.id, e.publisher_name, e.country, e.sender, e.subject,
+                e.send_date, e.email_sequence_number, e.sequence_confidence,
+                e.body_text,
+                a.primary_purpose, a.tone, a.effectiveness_score,
+                a.effectiveness_reasoning, a.value_propositions,
+                a.calls_to_action, a.personalization_elements,
+                a.notable_elements, a.key_takeaways,
+                a.frequency_expectations, a.analyzed_at
+            FROM emails e
+            INNER JOIN email_analysis a ON e.id = a.email_id
+            ORDER BY e.send_date DESC
+        """)
 
-    rows = cursor.fetchall()
+        rows = cursor.fetchall()
 
-    if not rows:
+        if not rows:
+            return None, None, None
+
+        # Convert to DataFrame
+        emails_data = []
+        for row in rows:
+            # Parse JSON fields with error handling
+            try:
+                value_props = json.loads(row[13]) if row[13] else []
+            except json.JSONDecodeError:
+                value_props = []
+
+            try:
+                ctas = json.loads(row[14]) if row[14] else []
+            except json.JSONDecodeError:
+                ctas = []
+
+            try:
+                personalization = json.loads(row[15]) if row[15] else []
+            except json.JSONDecodeError:
+                personalization = []
+
+            try:
+                notable = json.loads(row[16]) if row[16] else []
+            except json.JSONDecodeError:
+                notable = []
+
+            try:
+                takeaways = json.loads(row[17]) if row[17] else []
+            except json.JSONDecodeError:
+                takeaways = []
+
+            emails_data.append({
+                'id': row[0],
+                'publisher_name': row[1],
+                'country': row[2] or 'Unknown',
+                'sender': row[3],
+                'subject': row[4],
+                'send_date': row[5],
+                'sequence_number': row[6],
+                'sequence_confidence': row[7] or 'N/A',
+                'body_text': row[8],
+                'body_length': len(row[8]) if row[8] else 0,
+                'primary_purpose': row[9],
+                'tone': row[10],
+                'effectiveness_score': row[11],
+                'effectiveness_reasoning': row[12],
+                'value_propositions': value_props,
+                'value_prop_count': len(value_props),
+                'calls_to_action': ctas,
+                'cta_count': len(ctas),
+                'personalization_elements': personalization,
+                'personalization_count': len(personalization),
+                'notable_elements': notable,
+                'key_takeaways': takeaways,
+                'frequency_expectations': row[18],
+                'analyzed_at': row[19]
+            })
+
+        df = pd.DataFrame(emails_data)
+
+        # Get database stats
+        db_stats = db.get_database_stats()
+
+        # Get pattern analysis
+        reporter = EmailReporter(db)
+        patterns = reporter.get_common_patterns()
+
+        return df, db_stats, patterns
+    finally:
+        # Ensure database connection is always closed
         db.close()
-        return None, None, None
-
-    # Convert to DataFrame
-    emails_data = []
-    for row in rows:
-        value_props = json.loads(row[13]) if row[13] else []
-        ctas = json.loads(row[14]) if row[14] else []
-        personalization = json.loads(row[15]) if row[15] else []
-        notable = json.loads(row[16]) if row[16] else []
-        takeaways = json.loads(row[17]) if row[17] else []
-
-        emails_data.append({
-            'id': row[0],
-            'publisher_name': row[1],
-            'country': row[2] or 'Unknown',
-            'sender': row[3],
-            'subject': row[4],
-            'send_date': row[5],
-            'sequence_number': row[6],
-            'sequence_confidence': row[7] or 'N/A',
-            'body_text': row[8],
-            'body_length': len(row[8]) if row[8] else 0,
-            'primary_purpose': row[9],
-            'tone': row[10],
-            'effectiveness_score': row[11],
-            'effectiveness_reasoning': row[12],
-            'value_propositions': value_props,
-            'value_prop_count': len(value_props),
-            'calls_to_action': ctas,
-            'cta_count': len(ctas),
-            'personalization_elements': personalization,
-            'personalization_count': len(personalization),
-            'notable_elements': notable,
-            'key_takeaways': takeaways,
-            'frequency_expectations': row[18],
-            'analyzed_at': row[19]
-        })
-
-    df = pd.DataFrame(emails_data)
-
-    # Get database stats
-    db_stats = db.get_database_stats()
-
-    # Get pattern analysis
-    reporter = EmailReporter(db)
-    patterns = reporter.get_common_patterns()
-
-    db.close()
-
-    return df, db_stats, patterns
 
 
 def show_overview(df, db_stats, patterns):

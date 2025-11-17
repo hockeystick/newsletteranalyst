@@ -71,6 +71,9 @@ class BatchEmailAnalyzer:
             cursor = self.db.conn.cursor()
             query = "SELECT * FROM emails ORDER BY send_timestamp ASC"
             if batch_size:
+                # Validate batch_size to prevent SQL injection
+                if not isinstance(batch_size, int) or batch_size < 0:
+                    raise ValueError(f"batch_size must be a non-negative integer, got: {batch_size}")
                 query += f" LIMIT {batch_size}"
             cursor.execute(query)
             emails_to_analyze = [dict(row) for row in cursor.fetchall()]

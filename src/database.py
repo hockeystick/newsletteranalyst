@@ -319,6 +319,9 @@ class NewsletterDatabase:
         """
 
         if limit:
+            # Validate limit to prevent SQL injection
+            if not isinstance(limit, int) or limit < 0:
+                raise ValueError(f"limit must be a non-negative integer, got: {limit}")
             query += f" LIMIT {limit}"
 
         cursor.execute(query, (publisher_name,))
@@ -345,6 +348,9 @@ class NewsletterDatabase:
         """
 
         if limit:
+            # Validate limit to prevent SQL injection
+            if not isinstance(limit, int) or limit < 0:
+                raise ValueError(f"limit must be a non-negative integer, got: {limit}")
             query += f" LIMIT {limit}"
 
         cursor.execute(query)
@@ -388,6 +394,9 @@ class NewsletterDatabase:
         """
 
         if limit:
+            # Validate limit to prevent SQL injection
+            if not isinstance(limit, int) or limit < 0:
+                raise ValueError(f"limit must be a non-negative integer, got: {limit}")
             query += f" LIMIT {limit}"
 
         cursor.execute(query, (sender_email,))
@@ -522,6 +531,9 @@ class NewsletterDatabase:
         query += " ORDER BY send_timestamp DESC"
 
         if limit:
+            # Validate limit to prevent SQL injection
+            if not isinstance(limit, int) or limit < 0:
+                raise ValueError(f"limit must be a non-negative integer, got: {limit}")
             query += f" LIMIT {limit}"
 
         cursor.execute(query, params)
@@ -585,100 +597,109 @@ class NewsletterDatabase:
         """
         cursor = self.conn.cursor()
 
-        # Extract metadata
-        metadata = analysis.get('_metadata', {})
+        try:
+            # Begin transaction
+            cursor.execute("BEGIN TRANSACTION")
 
-        # Extract effectiveness score and reasoning
-        effectiveness = analysis.get('effectiveness_score', {})
-        if isinstance(effectiveness, dict):
-            effectiveness_score = effectiveness.get('score')
-            effectiveness_reasoning = effectiveness.get('reasoning')
-        else:
-            # Handle case where effectiveness_score is just a number
-            effectiveness_score = effectiveness
-            effectiveness_reasoning = None
+            # Extract metadata
+            metadata = analysis.get('_metadata', {})
 
-        # Check if analysis already exists
-        cursor.execute("SELECT id FROM email_analysis WHERE email_id = ?", (email_id,))
-        existing = cursor.fetchone()
+            # Extract effectiveness score and reasoning
+            effectiveness = analysis.get('effectiveness_score', {})
+            if isinstance(effectiveness, dict):
+                effectiveness_score = effectiveness.get('score')
+                effectiveness_reasoning = effectiveness.get('reasoning')
+            else:
+                # Handle case where effectiveness_score is just a number
+                effectiveness_score = effectiveness
+                effectiveness_reasoning = None
 
-        if existing:
-            # Update existing analysis
+            # Check if analysis already exists
+            cursor.execute("SELECT id FROM email_analysis WHERE email_id = ?", (email_id,))
+            existing = cursor.fetchone()
+
+            if existing:
+                # Update existing analysis
+                cursor.execute("""
+                    UPDATE email_analysis
+                    SET primary_purpose = ?,
+                        value_propositions = ?,
+                        calls_to_action = ?,
+                        personalization_elements = ?,
+                        tone = ?,
+                        frequency_expectations = ?,
+                        notable_elements = ?,
+                        effectiveness_score = ?,
+                        effectiveness_reasoning = ?,
+                        key_takeaways = ?,
+                        model_used = ?,
+                        input_tokens = ?,
+                        output_tokens = ?,
+                        analysis_raw_json = ?,
+                        analyzed_at = CURRENT_TIMESTAMP
+                    WHERE email_id = ?
+                """, (
+                    analysis.get('primary_purpose'),
+                    json.dumps(analysis.get('value_propositions', [])),
+                    json.dumps(analysis.get('calls_to_action', [])),
+                    json.dumps(analysis.get('personalization_elements', [])),
+                    analysis.get('tone'),
+                    analysis.get('frequency_expectations'),
+                    json.dumps(analysis.get('notable_elements', [])),
+                    effectiveness_score,
+                    effectiveness_reasoning,
+                    json.dumps(analysis.get('key_takeaways', [])),
+                    metadata.get('model'),
+                    metadata.get('input_tokens'),
+                    metadata.get('output_tokens'),
+                    json.dumps(analysis),
+                    email_id
+                ))
+                analysis_id = existing[0]
+            else:
+                # Insert new analysis
+                cursor.execute("""
+                    INSERT INTO email_analysis (
+                        email_id, primary_purpose, value_propositions, calls_to_action,
+                        personalization_elements, tone, frequency_expectations,
+                        notable_elements, effectiveness_score, effectiveness_reasoning,
+                        key_takeaways, model_used, input_tokens, output_tokens,
+                        analysis_raw_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    email_id,
+                    analysis.get('primary_purpose'),
+                    json.dumps(analysis.get('value_propositions', [])),
+                    json.dumps(analysis.get('calls_to_action', [])),
+                    json.dumps(analysis.get('personalization_elements', [])),
+                    analysis.get('tone'),
+                    analysis.get('frequency_expectations'),
+                    json.dumps(analysis.get('notable_elements', [])),
+                    effectiveness_score,
+                    effectiveness_reasoning,
+                    json.dumps(analysis.get('key_takeaways', [])),
+                    metadata.get('model'),
+                    metadata.get('input_tokens'),
+                    metadata.get('output_tokens'),
+                    json.dumps(analysis)
+                ))
+                analysis_id = cursor.lastrowid
+
+            # Mark email as analyzed
             cursor.execute("""
-                UPDATE email_analysis
-                SET primary_purpose = ?,
-                    value_propositions = ?,
-                    calls_to_action = ?,
-                    personalization_elements = ?,
-                    tone = ?,
-                    frequency_expectations = ?,
-                    notable_elements = ?,
-                    effectiveness_score = ?,
-                    effectiveness_reasoning = ?,
-                    key_takeaways = ?,
-                    model_used = ?,
-                    input_tokens = ?,
-                    output_tokens = ?,
-                    analysis_raw_json = ?,
-                    analyzed_at = CURRENT_TIMESTAMP
-                WHERE email_id = ?
-            """, (
-                analysis.get('primary_purpose'),
-                json.dumps(analysis.get('value_propositions', [])),
-                json.dumps(analysis.get('calls_to_action', [])),
-                json.dumps(analysis.get('personalization_elements', [])),
-                analysis.get('tone'),
-                analysis.get('frequency_expectations'),
-                json.dumps(analysis.get('notable_elements', [])),
-                effectiveness_score,
-                effectiveness_reasoning,
-                json.dumps(analysis.get('key_takeaways', [])),
-                metadata.get('model'),
-                metadata.get('input_tokens'),
-                metadata.get('output_tokens'),
-                json.dumps(analysis),
-                email_id
-            ))
-            analysis_id = existing[0]
-        else:
-            # Insert new analysis
-            cursor.execute("""
-                INSERT INTO email_analysis (
-                    email_id, primary_purpose, value_propositions, calls_to_action,
-                    personalization_elements, tone, frequency_expectations,
-                    notable_elements, effectiveness_score, effectiveness_reasoning,
-                    key_takeaways, model_used, input_tokens, output_tokens,
-                    analysis_raw_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                email_id,
-                analysis.get('primary_purpose'),
-                json.dumps(analysis.get('value_propositions', [])),
-                json.dumps(analysis.get('calls_to_action', [])),
-                json.dumps(analysis.get('personalization_elements', [])),
-                analysis.get('tone'),
-                analysis.get('frequency_expectations'),
-                json.dumps(analysis.get('notable_elements', [])),
-                effectiveness_score,
-                effectiveness_reasoning,
-                json.dumps(analysis.get('key_takeaways', [])),
-                metadata.get('model'),
-                metadata.get('input_tokens'),
-                metadata.get('output_tokens'),
-                json.dumps(analysis)
-            ))
-            analysis_id = cursor.lastrowid
+                UPDATE emails
+                SET is_analyzed = 1
+                WHERE id = ?
+            """, (email_id,))
 
-        # Mark email as analyzed
-        cursor.execute("""
-            UPDATE emails
-            SET is_analyzed = 1
-            WHERE id = ?
-        """, (email_id,))
-
-        self.conn.commit()
-        return analysis_id
+            # Commit transaction
+            self.conn.commit()
+            return analysis_id
+        except Exception as e:
+            # Rollback on error
+            self.conn.rollback()
+            raise
 
     def get_email_analysis(self, email_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -736,6 +757,9 @@ class NewsletterDatabase:
         """
 
         if limit:
+            # Validate limit to prevent SQL injection
+            if not isinstance(limit, int) or limit < 0:
+                raise ValueError(f"limit must be a non-negative integer, got: {limit}")
             query += f" LIMIT {limit}"
 
         cursor.execute(query)
