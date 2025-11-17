@@ -9,3 +9,5 @@ beautifulsoup4==4.12.2
 click==8.1.7
 tqdm==4.66.1
 anthropic==0.39.0
+streamlit==1.29.0
+plotly==5.18.0
