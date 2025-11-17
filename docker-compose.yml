@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  newsletter-analyst:
+    build: .
+    container_name: newsletter_analyst
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount data directory for database persistence
+      - ./data:/app/data
+      # Mount config for credentials (credentials.json and token.json)
+      - ./config:/app/config
+      # Mount output directory for exports
+      - ./output:/app/output
+      # Mount logs directory
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: streamlit run dashboard.py --server.address 0.0.0.0 --server.port 8501
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

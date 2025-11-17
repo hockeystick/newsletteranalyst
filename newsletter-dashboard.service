@@ -1,0 +1,48 @@
+# Newsletter Analyst - Systemd Service File
+# Copy this file to /etc/systemd/system/newsletter-dashboard.service
+#
+# Installation:
+#   sudo cp newsletter-dashboard.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable newsletter-dashboard
+#   sudo systemctl start newsletter-dashboard
+#
+# Management:
+#   sudo systemctl status newsletter-dashboard
+#   sudo systemctl restart newsletter-dashboard
+#   sudo systemctl stop newsletter-dashboard
+#   sudo journalctl -u newsletter-dashboard -f
+
+[Unit]
+Description=Newsletter Analyst Dashboard
+Documentation=https://github.com/YOUR_USERNAME/newsletteranalyst
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/newsletteranalyst
+Environment="PATH=/opt/newsletteranalyst/venv/bin"
+EnvironmentFile=/opt/newsletteranalyst/.env
+ExecStart=/opt/newsletteranalyst/venv/bin/streamlit run dashboard.py --server.address 0.0.0.0 --server.port 8501
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=newsletter-analyst
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/newsletteranalyst/data /opt/newsletteranalyst/logs /opt/newsletteranalyst/output
+
+# Resource limits
+MemoryLimit=2G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data and sensitive files
+data/*.db
+config/token.json
+config/credentials.json
+.env
+
+# Logs
+logs/
+*.log
+
+# Documentation (included via COPY)
+*.md
+
+# Output files
+output/
+
+# Test files
+tests/
+*.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
